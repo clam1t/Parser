@@ -42,6 +42,27 @@ class Parser:
 
         return doc_name
 
+    def extract_discipliny_specialiteta(self):
+        disciplines = []
+        all_text = ""
+        for page_num in range(len(self.doc)):
+            page = self.doc[page_num]
+            text = page.get_text()
+            all_text += text
+
+        lines = [line.strip() for line in all_text.split('\n') if line.strip()]
+        pattern1 = r'2.2.[\s\w]+\s\(\w+\)\sпо'
+        pattern2 = r'\w\s\w+\s\w+\s\w+\s\"\w+\s\(\w+\)\"'
+
+        match1 = re.search(pattern1, all_text)
+        match2 = re.search(pattern2, all_text)
+
+        if match1 and match2:
+            start_pos = match1.end()
+            end_pos = match2.start()
+            disciplines = all_text[start_pos:end_pos].strip()
+            return disciplines
+
     def close(self):
         self.doc.close()
 
@@ -49,5 +70,7 @@ class Parser:
 
 parser = Parser("123.pdf")
 doc_name = parser.extract_doc_name()
-print("Найденное название:", doc_name)
+discipliny_specialiteta = parser.extract_discipliny_specialiteta()
+print(doc_name)
+print(discipliny_specialiteta)
 parser.close()
