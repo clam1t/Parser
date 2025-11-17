@@ -44,10 +44,7 @@ class Parser:
         return doc_name
 
     def extract_discipliny_specialiteta(self):
-        disciplines = []
         all_text = ""
-
-
         with pdfplumber.open(self.pdf_path) as pdf:
             for page in pdf.pages:
                 text = page.extract_text()
@@ -66,63 +63,52 @@ class Parser:
             end_pos = match2.start()
             disciplines_text = all_text[start_pos:end_pos].strip()
             disciplines = [discipline.strip() for discipline in disciplines_text.split(',')]
-
-            all_disciplines = []
+            a=''
             i = 0
-            while i < len(disciplines) - 1:
-                if "(" in disciplines[i] and ")" not in disciplines[i]:
-                    disciplines[i] = str(disciplines[i]) + " " + str(disciplines[i + 1])
-                    disciplines.pop(i + 1)
+            while i < len(disciplines):
+                if "(" in disciplines[i]:
+                    a=[]
+                    n = [i]
+                    a.append(disciplines[i])
+                    j = i + 1
+                    while j < len(disciplines) and ")" not in disciplines[j]:
+                        a.append(disciplines[j])
+                        n.append(j)
+                        j += 1
+
+                    if j < len(disciplines):
+                        a.append(disciplines[j])
+                        n.append(j)
+
+                    for q in n[::-1]:
+                        disciplines.pop(q)
+
+                    for z in range(len(a)):
+                        disciplines.insert(n[0]+z, a[z])
+
+                    i = n[0] + 1
                 else:
                     i += 1
+            for i in range(len(disciplines)):
+                if "(" in disciplines[i]:
+                    for j in range(len(disciplines[i])):
+                        if disciplines[i][j] == "(":
+                            a = j + 1
+                            break
+                    disciplines[i] = str(disciplines[i][a:])
+
+                if ")" in disciplines[i]:
+                    for j in range(len(disciplines[i])):
+                        if disciplines[i][j] == ")":
+                            b = j
+                            break
+                    disciplines[i] = str(disciplines[i][:b])
+
             list_disciplin = []
             for discipline in disciplines:
-                list_disciplin. append(discipline.replace("\n"," "))
+                list_disciplin.append(discipline.replace("\n"," "))
+            return list_disciplin
 
-            for discipline in list_disciplin:
-                print(discipline)
-                match = re.search(r'\((.*?)\)', discipline)
-                if not match:
-                    all_disciplines.append(discipline)
-                if match:
-                    content = match.group(1)
-                    print(content)
-                    letter_content=[]
-
-                    for letter in content:
-                        letter_content.append(letter)
-                    pos_s=[-1]
-                    for i in range(len(letter_content)):
-                        if re.search(r'\s', letter_content[i]):
-                            pos_s.append(i)
-                    pos_s.append(len(letter_content))
-                    print(pos_s)
-                    itog_content=[]
-                    for i in range(len(pos_s)-1):
-                        itog_content.append(letter_content[pos_s[i]+1:pos_s[i+1]])
-                    print(itog_content)
-                    itog_slova=[]
-                    for i in range(len(itog_content)):
-                        slovo = ''
-                        for j in range(len(itog_content[i])):
-                            slovo+=itog_content[i][j]
-                        itog_slova.append(slovo)
-                    print(itog_slova)
-                    super_itog_slova=[]
-                    unique_words = list(dict.fromkeys(itog_slova))
-
-                    if unique_words:
-                        base_word = unique_words[0]
-                        for word in unique_words[1:]:
-                            super_itog_slova.append(f"{base_word} {word}")
-
-                    print(super_itog_slova)
-                    all_disciplines.extend(super_itog_slova)
-
-
-            return all_disciplines
-
-        return []
 
     def close(self):
         pass
