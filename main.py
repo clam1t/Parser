@@ -19,7 +19,7 @@ class Parser:
 
         lines = [line.strip() for line in all_text.split('\n') if line.strip()]
 
-        code_pattern = r'\d{2}\.[0][456]\.\d{2}'
+        code_pattern = r'\d{2}\.[0][345]\.\d{2}'
         date_pattern = r'от\s*\d{1,2}\s+\w+\s+\d{4}\s*г\.'
 
         found_code = None
@@ -109,6 +109,54 @@ class Parser:
                 list_disciplin.append(discipline.replace("\n"," "))
             return list_disciplin
 
+    def extract_specializacii(self):
+        all_text = ""
+        with pdfplumber.open(self.pdf_path) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    all_text += text + "\n"
+
+        pattern1 = r'1.14. [\w\s]+:'
+        pattern2 = r'Программы[\w\s№\",-\[\]]+.'
+
+        match1 = re.search(pattern1, all_text)
+        match2 = re.search(pattern2, all_text)
+
+        if match1 and match2:
+            start_pos = match1.end()
+            end_pos = match2.start()
+            specializacii_text = all_text[start_pos:end_pos].strip()
+            spezializacii = [specializacia.strip() for specializacia in specializacii_text.split('специализация №')]
+
+            num1=[]
+            for i in range(len(spezializacii)):
+                if spezializacii[i]=='':
+                    num1.append(i)
+                if ";" in spezializacii[i]:
+                    num2=0
+                    for j in range(len(spezializacii[i])):
+                        if spezializacii[i][j]==";":
+                            num2=j
+                    spezializacii[i]=spezializacii[i][:num2]
+
+            for i in num1[::-1]:
+                spezializacii.pop(i)
+            numbers_s=[]
+            names_s=[]
+
+            for i in range(len(spezializacii)):
+                for j in range(len(spezializacii[i])):
+                    if spezializacii[i][j]=='"':
+                        numbers_s.append((spezializacii[i][:j]).strip(" "))
+                        names_s.append((spezializacii[i][j:]).strip(" "))
+                        break
+            names_s_s=[]
+            for name in names_s:
+                names_s_s.append(name.replace("\n"," ").replace('"',""))
+
+
+            return numbers_s, names_s_s
 
     def close(self):
         pass
@@ -119,6 +167,8 @@ if __name__ == "__main__":
     parser = Parser("123.pdf")
     doc_name = parser.extract_doc_name()
     discipliny_specialiteta = parser.extract_discipliny_specialiteta()
+    specializacii_specialiteta = parser.extract_specializacii()
     print("Название документа:", doc_name)
     print("Дисциплины специальности:", discipliny_specialiteta)
+    print("специализации специальности:", specializacii_specialiteta)
     parser.close()
