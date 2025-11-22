@@ -69,9 +69,9 @@ class Parser:
         all_text = ""
         with pdfplumber.open(self.pdf_path) as pdf:
             for page in pdf.pages:
-                text = page.extract_text().replace("fgos.ru","").replace("self.date", "")
+                text = page.extract_text()
                 if text:
-                    all_text += text + "\n"
+                    all_text += text.replace("fgos.ru","").replace(str(self.date), "") + "\n"
 
 
         pattern1 = r'2\.2\.[\s\w]+\s\(\w+\)\sпо'
@@ -135,9 +135,9 @@ class Parser:
         all_text = ""
         with pdfplumber.open(self.pdf_path) as pdf:
             for page in pdf.pages:
-                text = page.extract_text().replace("fgos.ru","").replace("self.date", "")
+                text = page.extract_text()
                 if text:
-                    all_text += text + "\n"
+                    all_text += text.replace("fgos.ru","").replace(str(self.date), "") + "\n"
 
         pattern1 = r'1.14. [\w\s]+:'
         pattern2 = r'Программы[\w\s№\",-\[\]]+.'
@@ -184,49 +184,49 @@ class Parser:
 
 
 
-    def extract_structure_and_volume(self):
-        pattern1 = r'Структура и объем программы \w+\nТаблица\n'
-        pattern2 = r'2\.2\. Программа'
-
-        table = None
-        first_page = None
-        found_first_pattern = False
-
-
-        with pdfplumber.open(self.pdf_path) as pdf:
-            for page_num, page in enumerate(pdf.pages):
-                text = page.extract_text().replace("fgos.ru","").replace("self.date", "")
-                if not text:
-                    continue
-
-                if re.search(pattern1, text):
-                    found_first_pattern = True
-                    first_page = page
-                    continue
-
-                if found_first_pattern and re.search(pattern2, text):
-                    if first_page:
-
-                        table1 = first_page.extract_table()
-                        table2 = page.extract_table()
-
-                        if table1 and table2:
-                            table = table1 + table2
-
-                        elif table1:
-                            table = table1
-
-                        elif table2:
-                            table = table2
-
-                    else:
-                        table = page.extract_table()
-                    break
-                if found_first_pattern and page_num == len(pdf.pages) - 1:
-                    table = first_page.extract_table() if first_page else None
-
-        return table
-
+    # def extract_structure_and_volume(self):
+    #     pattern1 = r'Структура и объем программы \w+\nТаблица\n'
+    #     pattern2 = r'2\.2\. Программа'
+    #
+    #     table = None
+    #     first_page = None
+    #     found_first_pattern = False
+    #
+    #
+    #     with pdfplumber.open(self.pdf_path) as pdf:
+    #         for page_num, page in enumerate(pdf.pages):
+    #             text = page.extract_text().replace("fgos.ru","").replace("self.date", "")
+    #             if not text:
+    #                 continue
+    #
+    #             if re.search(pattern1, text):
+    #                 found_first_pattern = True
+    #                 first_page = page
+    #                 continue
+    #
+    #             if found_first_pattern and re.search(pattern2, text):
+    #                 if first_page:
+    #
+    #                     table1 = first_page.extract_table()
+    #                     table2 = page.extract_table()
+    #
+    #                     if table1 and table2:
+    #                         table = table1 + table2
+    #
+    #                     elif table1:
+    #                         table = table1
+    #
+    #                     elif table2:
+    #                         table = table2
+    #
+    #                 else:
+    #                     table = page.extract_table()
+    #                 break
+    #             if found_first_pattern and page_num == len(pdf.pages) - 1:
+    #                 table = first_page.extract_table() if first_page else None
+    #
+    #     return table
+    #
 
 
 
@@ -240,7 +240,7 @@ class Parser:
             for page in pdf.pages:
                 text = page.extract_text()
                 if text:
-                    all_text += text + "\n"
+                    all_text += text.replace("fgos.ru","").replace(str(self.date), "") + "\n"
 
         pattern1 = r'Типы учебной практики:'
         pattern2 = r'Типы производственной практики:'
@@ -253,14 +253,14 @@ class Parser:
         if match1 and match2:
             start_pos = match1.end()
             end_pos = match2.start()
-            uch_praktika_text = all_text[start_pos:end_pos].strip().replace("fgos.ru","").replace("self.date", "")
+            uch_praktika_text = all_text[start_pos:end_pos].strip()
             uch_praktika = [uch_praktika.strip().replace(".","") for uch_praktika in uch_praktika_text.split(';')]
             uch_praktika.insert(0,'Типы учебной практики:')
 
         if match2 and match3:
             start_pos = match2.end()
             end_pos = match3.start()
-            pr_praktika_text = all_text[start_pos:end_pos].strip().replace("fgos.ru","").replace("self.date", "")
+            pr_praktika_text = all_text[start_pos:end_pos].strip()
             pr_praktika = [pr_praktika.strip().replace(".","") for pr_praktika in pr_praktika_text.split(';')]
             pr_praktika.insert(0,'Типы производственной практики:')
 
@@ -272,52 +272,42 @@ class Parser:
 
 
     # def extract_uk(self):
-    #     pattern1 = r'"3.2. Программа \w+ должна устанавливать следующие универсальные компетенции:'
-    #     pattern2 = r'3\.3\. Программа \w+'
-    #
-    #     table = None
-    #     page1 = None
-    #     found_first_pattern = False
-    #
-    #
+    #     all_text = ""
     #     with pdfplumber.open(self.pdf_path) as pdf:
     #         for page in pdf.pages:
     #             text = page.extract_text()
-    #             if not text:
-    #                 continue
-    #             if re.search(pattern1, text):
-    #                 found_first_pattern = True
-    #                 page1 = page
-    #                 continue
-    #             if found_first_pattern and re.search(pattern2, text):
-    #                 if page1:
-    #                     table1 = page1.extract_table()
-    #                     table2 = page.extract_table()
-    #                     if table1 and table2:
-    #                         table = table1 + table2
-    #                     elif table1:
-    #                         table = table1
-    #                     elif table2:
-    #                         table = table2
-    #                 else:
-    #                     table = page.extract_table()
-    #                 break
+    #             if text:
+    #                 all_text += text.replace("fgos.ru","").replace(str(self.date), "") + "\n"
+    #     pattern1 = r'3\.2\.\s*Программа[\w\s]+универсальные компетенции:'
+    #     pattern2 = r'3\.3\.\s*Программа\s+\w+'
     #
+    #     match1 = re.search(pattern1, all_text)
+    #     match2 = re.search(pattern2, all_text)
     #
-    #             if found_first_pattern and not re.search(pattern2, text):
-    #                 table = page1.extract_table() if page1 else page.extract_table()
-    #
-    #     return table
+    #     if match1 and match2:
+    #         start_pos = match1.end()
+    #         end_pos = match2.start()
+    #         uk_text = all_text[start_pos:end_pos].strip()
+    #         print(uk_text)
+    #         stroka1=[]
+    #         for i in range(len(uk_text)):
+    #             if uk_text[i]=="\\" and uk_text[i+1]=="n":
+    #                 stroka1.append(uk_text[:i])#.split(r'[А-Я]'))
+    #         return(stroka1)
 
 
-    """
+
+
+
+
+
     def extract_opk(self):
         all_text = ""
         with pdfplumber.open(self.pdf_path) as pdf:
             for page in pdf.pages:
                 text = page.extract_text()
                 if text:
-                    all_text += text + "\n"
+                    all_text += text.replace("fgos.ru","").replace(str(self.date), "") + "\n"
 
         pattern1 = r'3\.3\. Программа [\w\s]+:'
         pattern2 = r'3.4. Профессиональные компетенции'
@@ -328,37 +318,14 @@ class Parser:
         if match1 and match2:
             start_pos = match1.end()
             end_pos = match2.start()
-            opk_text = all_text[start_pos:end_pos].strip().replace("fgos.ru","").replace()
-            opk = [opk.strip() for opk in opk_text.split(';')]
+            opk_text = all_text[start_pos:end_pos].strip()
+            opk = [opk.strip().replace("\n", "") for opk in opk_text.split(';')]
+            for i in range(len(opk)):
+                opk[i] = opk[i].split(".")
+            print(opk)
 
-            num1 = []
-            for i in range(len(spezializacii)):
-                if spezializacii[i] == '':
-                    num1.append(i)
-                if ";" in spezializacii[i]:
-                    num2 = 0
-                    for j in range(len(spezializacii[i])):
-                        if spezializacii[i][j] == ";":
-                            num2 = j
-                    spezializacii[i] = spezializacii[i][:num2]
 
-            for i in num1[::-1]:
-                spezializacii.pop(i)
-            numbers_s = []
-            names_s = []
 
-            for i in range(len(spezializacii)):
-                for j in range(len(spezializacii[i])):
-                    if spezializacii[i][j] == '"':
-                        numbers_s.append((spezializacii[i][:j]).strip(" "))
-                        names_s.append((spezializacii[i][j:]).strip(" "))
-                        break
-            names_s_s = []
-            for name in names_s:
-                names_s_s.append(name.replace("\n", " ").replace('"', ""))
-
-            return numbers_s, names_s_s
-    """
 
 
     def close(self):
@@ -368,17 +335,19 @@ class Parser:
 
 if __name__ == "__main__":
     parser = Parser("123.pdf")
-    doc_name = parser.extract_doc_name()
-    discipliny_specialiteta = parser.extract_discipliny_specialiteta()
-    specializacii_specialiteta = parser.extract_specializacii()
-    structure_and_vloume = parser.extract_structure_and_volume()
-    praktika = parser.extract_praktika()
-    #u_kompetencii = parser.extract_uk()
-    print(doc_name)
-    print(discipliny_specialiteta)
-    print(specializacii_specialiteta)
-    print(structure_and_vloume)
-    print(praktika)
-    print(parser.date)
-    #print(u_kompetencii)
+    # doc_name = parser.extract_doc_name()
+    # discipliny_specialiteta = parser.extract_discipliny_specialiteta()
+    # specializacii_specialiteta = parser.extract_specializacii()
+    # structure_and_vloume = parser.extract_structure_and_volume()
+    # praktika = parser.extract_praktika()
+    # u_kompetencii = parser.extract_uk()
+    opk=parser.extract_opk()
+    # print(doc_name)
+    # print(discipliny_specialiteta)
+    # print(specializacii_specialiteta)
+    # print(structure_and_vloume)
+    # print(praktika)
+    # print(parser.date)
+    # print(u_kompetencii)
+    print(opk)
     parser.close()
