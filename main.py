@@ -107,9 +107,8 @@ class Parser:
         return doc_name
 
     def extract_discipliny_specialiteta(self):
-
-        pattern1 = r'2\.2\.[\s\w]+\s\(\w+\)\sпо'
-        pattern2 = r'\w\s\w+\s\w+\s\w+\s\"\w+\s\(\w+\)\"'
+        pattern1 = r'2\.2\.[\sа-яА-Я\(\):]+по'
+        pattern2 = r'В федеральных государственных организациях[\,\(\)а-яА-Я\s\.]+2\.3.'
 
         match1 = re.search(pattern1, self.text)
         match2 = re.search(pattern2, self.text)
@@ -118,12 +117,13 @@ class Parser:
             start_pos = match1.end()
             end_pos = match2.start()
             disciplines_text = self.text[start_pos:end_pos].strip()
+            disciplines_text = disciplines_text.replace(';', ',')
             disciplines = [discipline.strip() for discipline in disciplines_text.split(',')]
-            a=''
+            a = ''
             i = 0
             while i < len(disciplines):
                 if "(" in disciplines[i]:
-                    a=[]
+                    a = []
                     n = [i]
                     a.append(disciplines[i])
                     j = i + 1
@@ -140,7 +140,7 @@ class Parser:
                         disciplines.pop(q)
 
                     for z in range(len(a)):
-                        disciplines.insert(n[0]+z, a[z])
+                        disciplines.insert(n[0] + z, a[z])
 
                     i = n[0] + 1
                 else:
@@ -162,51 +162,25 @@ class Parser:
 
             list_disciplin = []
             for discipline in disciplines:
-                list_disciplin.append(discipline.replace("\n"," "))
+                list_disciplin.append(discipline.replace("\n", " "))
             return list_disciplin
 
     def extract_specializacii(self):
+        pattern_direct = r'специализация №\s*(\d+)\s*"([^"]+(?:"\s*\([^)]+\))?)"'
+        matches = re.findall(pattern_direct, self.text)
 
-        pattern1 = r'1.14. [\w\s]+:'
-        pattern2 = r'Программы[\w\s№\",-\[\]]+.'
+        numbers_s = []
+        names_s = []
 
-        match1 = re.search(pattern1, self.text)
-        match2 = re.search(pattern2, self.text)
+        if matches:
+            for match in matches:
+                num = match[0]
+                name = match[1]
+                if num not in numbers_s:
+                    numbers_s.append(num)
+                    names_s.append(name)
+            return numbers_s, names_s
 
-        if match1 and match2:
-            start_pos = match1.end()
-            end_pos = match2.start()
-            specializacii_text = self.text[start_pos:end_pos].strip()
-            spezializacii = [specializacia.strip() for specializacia in specializacii_text.split('специализация №')]
-
-            num1=[]
-            for i in range(len(spezializacii)):
-                if spezializacii[i]=='':
-                    num1.append(i)
-                if ";" in spezializacii[i]:
-                    num2=0
-                    for j in range(len(spezializacii[i])):
-                        if spezializacii[i][j]==";":
-                            num2=j
-                    spezializacii[i]=spezializacii[i][:num2]
-
-            for i in num1[::-1]:
-                spezializacii.pop(i)
-            numbers_s=[]
-            names_s=[]
-
-            for i in range(len(spezializacii)):
-                for j in range(len(spezializacii[i])):
-                    if spezializacii[i][j]=='"':
-                        numbers_s.append((spezializacii[i][:j]).strip(" "))
-                        names_s.append((spezializacii[i][j:]).strip(" "))
-                        break
-            names_s_s=[]
-            for name in names_s:
-                names_s_s.append(name.replace("\n"," ").replace('"',""))
-
-
-            return numbers_s, names_s_s
 
     def extract_structure_and_volume(self):
         structure_keywords = ['структура программы', 'объем программы', 'блок', 'дисциплины', 'практика']
