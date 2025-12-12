@@ -227,7 +227,7 @@ class Parser:
         match3 = re.search(pattern3, self.text)
         if not match3:
             match3 = re.search(pattern4, self.text)
-
+        #
         uch_praktika = []
         pr_praktika = []
         if match1 and match2:
