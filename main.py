@@ -1,64 +1,102 @@
+import requests
+from bs4 import BeautifulSoup
 import re
-import pdfplumber
-import fitz
 import pandas as pd
 from openpyxl import load_workbook
-from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
+from openpyxl.styles import Alignment
+from pdfplumber.utils import extract_text
+
 
 class Parser:
-    def __init__(self, pdf_path):
-        self.pdf_path = pdf_path
+    def __init__(self, url):
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        })
+        self.url = url
+        self.html_content = self.get_page(url)
+        self.soup = BeautifulSoup(self.html_content, 'html.parser') if self.html_content else None
+        self.all_tables = self._extract_all_tables() if self.soup else []
         self.date = self.extract_date()
 
+        self.text = self.soup.get_text().replace("fgos.ru", "").replace(str(self.date), "") if self.soup else ""
+        self.doc_name = self.extract_doc_name()
+
+    def get_page(self, url):
+        try:
+            response = self.session.get(url)
+            response.raise_for_status()
+            return response.text
+        except requests.RequestException as e:
+            print(f"Ошибка при получении страницы: {e}")
+            return None
+
+    def _extract_all_tables(self):
+        all_tables_data = []
+
+        try:
+            tables = pd.read_html(str(self.soup))
+
+            for i, table_df in enumerate(tables):
+                table_data = table_df.fillna('').values.tolist()
+
+                table_data = [[str(cell) for cell in row] for row in table_data]
+
+                all_tables_data.append({
+                    'table_obj': None,
+                    'data': table_data,
+                    'html': '',
+                    'index': i
+                })
+
+        except Exception as e:
+            print(f"Ошибка при парсинге таблиц pandas: {e}")
+            all_tables_data = []
+            tables = self.soup.find_all('table')
+
+            for i, table in enumerate(tables):
+                table_data = []
+                rows = table.find_all('tr')
+
+                for row in rows:
+                    cols = row.find_all(['th', 'td'])
+                    row_data = [col.get_text(strip=True) for col in cols]
+                    if any(row_data):
+                        table_data.append(row_data)
+
+                all_tables_data.append({
+                    'table_obj': table,
+                    'data': table_data,
+                    'html': str(table),
+                    'index': i
+                })
+
+        return all_tables_data
+
     def extract_date(self):
-        date = ''
-        all_text = ""
-        with pdfplumber.open(self.pdf_path) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    all_text += text + "\n"
-
-        lines = [line.strip() for line in all_text.split('\n') if line.strip()]
-
         date_pattern = r'\d{1,2}\.\d{1,2}\.\d{4}'
+        text = self.soup.get_text()
 
-        for line in lines:
-            date_match = re.search(date_pattern, line)
-            if date_match:
-                date = date_match.group()
-                break
-
-        return date
+        date_match = re.search(date_pattern, text)
+        if date_match:
+            return date_match[0]
 
 
     def extract_doc_name(self):
-        doc_name = ''
-        all_text = ""
-
-        with pdfplumber.open(self.pdf_path) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    all_text += text + "\n"
-
-        lines = [line.strip() for line in all_text.split('\n') if line.strip()]
-
         code_pattern = r'\d{2}\.[0][345]\.\d{2}'
         date_pattern = r'от\s*\d{1,2}\s+\w+\s+\d{4}\s*г\.'
 
         found_code = None
         found_date = None
 
-        for line in lines:
-            code_match = re.search(code_pattern, line)
-            if code_match and not found_code:
-                found_code = code_match.group()
+        code_match = re.search(code_pattern, self.text)
+        if code_match and not found_code:
+            found_code = code_match.group()
 
-            date_match = re.search(date_pattern, line)
-            if date_match and not found_date:
-                found_date = date_match.group()
+        date_match = re.search(date_pattern, self.text)
+        if date_match and not found_date:
+            found_date = date_match.group()
 
         if found_code and found_date:
             doc_name = f"{found_code}_{found_date.replace(' ', '_')}"
@@ -70,30 +108,27 @@ class Parser:
         return doc_name
 
     def extract_discipliny_specialiteta(self):
-        all_text = ""
-        doc = fitz.open(self.pdf_path)
-        for page in doc:
-            text = page.get_text()
-            if text:
-                all_text += text.replace("fgos.ru", "").replace(str(self.date), "") + "\n"
+        pattern1 = r'2\.2\.[\sа-яА-Я\(\):]+по'
+        pattern2 = r'В федеральных государственных организациях[\,\(\)а-яА-Я\s\.]+2\.3.'
+        pattern3= r'2\.3\.'
 
+        match1 = re.search(pattern1, self.text)
+        match2 = re.search(pattern2, self.text)
+        if not match2:
+            match2 = re.search(pattern3, self.text)
 
-        pattern1 = r'2\.2\.[\s\w]+\s\(\w+\)\sпо'
-        pattern2 = r'\w\s\w+\s\w+\s\w+\s\"\w+\s\(\w+\)\"'
-
-        match1 = re.search(pattern1, all_text)
-        match2 = re.search(pattern2, all_text)
 
         if match1 and match2:
             start_pos = match1.end()
             end_pos = match2.start()
-            disciplines_text = all_text[start_pos:end_pos].strip()
+            disciplines_text = self.text[start_pos:end_pos].strip()
+            disciplines_text = disciplines_text.replace(';', ',').replace(".", "")
             disciplines = [discipline.strip() for discipline in disciplines_text.split(',')]
-            a=''
+            a = ''
             i = 0
             while i < len(disciplines):
                 if "(" in disciplines[i]:
-                    a=[]
+                    a = []
                     n = [i]
                     a.append(disciplines[i])
                     j = i + 1
@@ -110,20 +145,20 @@ class Parser:
                         disciplines.pop(q)
 
                     for z in range(len(a)):
-                        disciplines.insert(n[0]+z, a[z])
+                        disciplines.insert(n[0] + z, a[z])
 
                     i = n[0] + 1
                 else:
                     i += 1
             for i in range(len(disciplines)):
-                if "(" in disciplines[i]:
+                if "(" in disciplines[i] and '"' not in disciplines[i]:
                     for j in range(len(disciplines[i])):
                         if disciplines[i][j] == "(":
                             a = j + 1
                             break
                     disciplines[i] = str(disciplines[i][a:])
 
-                if ")" in disciplines[i]:
+                if ")" in disciplines[i] and '"' not in disciplines[i]:
                     for j in range(len(disciplines[i])):
                         if disciplines[i][j] == ")":
                             b = j
@@ -132,111 +167,73 @@ class Parser:
 
             list_disciplin = []
             for discipline in disciplines:
-                list_disciplin.append(discipline.replace("\n"," "))
+                list_disciplin.append(discipline.replace("\n", " "))
             return list_disciplin
 
     def extract_specializacii(self):
-        all_text = ""
-        doc = fitz.open(self.pdf_path)
-        for page in doc:
-            text = page.get_text()
-            if text:
-                all_text += text.replace("fgos.ru", "").replace(str(self.date), "") + "\n"
+        pattern_direct = r'специализация\s№\s*(\d+)\s*"([^"]+(?:"\s*\([^)]+\))?)"'
+        pattern2=r'1.14.[а-яА-я\s]+:'
+        pattern3=r'1.15'
+        matches = re.findall(pattern_direct, self.text)
 
-        pattern1 = r'1.14. [\w\s]+:'
-        pattern2 = r'Программы[\w\s№\",-\[\]]+.'
+        numbers_s = []
+        names_s = []
 
-        match1 = re.search(pattern1, all_text)
-        match2 = re.search(pattern2, all_text)
+        if matches:
+            for match in matches:
+                num = match[0]
+                name = match[1]
+                if num not in numbers_s:
+                    numbers_s.append(num)
+                    names_s.append(name)
+        if not numbers_s and not names_s:
+            match1 = re.search(pattern2, self.text)
+            match2 = re.search(pattern3, self.text)
+            if match1 and match2:
+                start_pos = match1.end()
+                end_pos = match2.start()
+                specializacii_text = self.text[start_pos:end_pos].strip()
+                specializacii = [discipline.strip() for discipline in specializacii_text.split(';')]
+                for i in range(len(specializacii)):
+                    numbers_s.append(i+1)
+                    names_s.append((specializacii[i]))
 
-        if match1 and match2:
-            start_pos = match1.end()
-            end_pos = match2.start()
-            specializacii_text = all_text[start_pos:end_pos].strip()
-            spezializacii = [specializacia.strip() for specializacia in specializacii_text.split('специализация №')]
-
-            num1=[]
-            for i in range(len(spezializacii)):
-                if spezializacii[i]=='':
-                    num1.append(i)
-                if ";" in spezializacii[i]:
-                    num2=0
-                    for j in range(len(spezializacii[i])):
-                        if spezializacii[i][j]==";":
-                            num2=j
-                    spezializacii[i]=spezializacii[i][:num2]
-
-            for i in num1[::-1]:
-                spezializacii.pop(i)
-            numbers_s=[]
-            names_s=[]
-
-            for i in range(len(spezializacii)):
-                for j in range(len(spezializacii[i])):
-                    if spezializacii[i][j]=='"':
-                        numbers_s.append((spezializacii[i][:j]).strip(" "))
-                        names_s.append((spezializacii[i][j:]).strip(" "))
-                        break
-            names_s_s=[]
-            for name in names_s:
-                names_s_s.append(name.replace("\n"," ").replace('"',""))
+        return numbers_s, names_s
 
 
-            return numbers_s, names_s_s
 
     def extract_structure_and_volume(self):
-        pattern1 = r'Структура и объем программы \w+'
-        pattern2 = r'2\.2\. Программа'
+        structure_keywords = ['структура программы', 'объем программы', 'блок', 'дисциплины', 'практика']
 
-        all_tables = []
-        capturing = False
+        for table_info in self.all_tables:
+            table_text = ' '.join([' '.join(row) for row in table_info['data']]).lower()
 
-        with pdfplumber.open(self.pdf_path) as pdf:
-            for page_num, page in enumerate(pdf.pages):
-                text = page.extract_text()
-                text = text.replace("fgos.ru", "").replace(str(self.date), "").strip()
-                if not text:
-                    continue
+            keyword_count = sum(1 for keyword in structure_keywords if keyword in table_text)
 
-                if re.search(pattern1, text):
-                    capturing = True
+            if keyword_count >= 2:
 
-                if capturing:
-                    tables = page.find_tables()
-                    for table in tables:
-                        table_data = table.extract()
-                        if table_data:
-                            all_tables.extend(table_data)
+                return table_info['data']
 
-                if re.search(pattern2, text):
-                    break
-
-
-        return all_tables
 
     def extract_praktika(self):
-        all_text = ""
-        doc = fitz.open(self.pdf_path)
-        for page in doc:
-            text = page.get_text()
-            if text:
-                all_text += text.replace("fgos.ru", "").replace(str(self.date), "") + "\n"
-
         pattern1 = r'Типы учебной практики:'
-        pattern2 = r'Типы производственной практики:'
+        pattern2 = r'Тип[\ы]? производственной практики:'
         pattern3 = r'Преддипломная практика проводится для выполнения выпускной квалификационной работы и является обязательной.'
-
-        match1 = re.search(pattern1, all_text)
-        match2 = re.search(pattern2, all_text)
-        match3 = re.search(pattern3, all_text)
+        pattern4= r'2\.5\.'
+        if self.doc_name[4]=="4":
+            pattern4=r'2\.3\.'
+        match1 = re.search(pattern1, self.text)
+        match2 = re.search(pattern2, self.text)
+        match3 = re.search(pattern3, self.text)
+        if not match3:
+            match3 = re.search(pattern4, self.text)
 
         uch_praktika = []
         pr_praktika = []
-
         if match1 and match2:
             start_pos = match1.end()
             end_pos = match2.start()
-            uch_praktika_text = all_text[start_pos:end_pos].strip()
+            uch_praktika_text = self.text[start_pos:end_pos].strip()
 
             sentences = uch_praktika_text.split(';')
             clean_sentences = []
@@ -252,7 +249,7 @@ class Parser:
         if match2 and match3:
             start_pos = match2.end()
             end_pos = match3.start()
-            pr_praktika_text = all_text[start_pos:end_pos].strip()
+            pr_praktika_text = self.text[start_pos:end_pos].strip()
 
             sentences = pr_praktika_text.split(';')
             clean_sentences = []
@@ -265,72 +262,31 @@ class Parser:
 
             pr_praktika = clean_sentences
 
-        doc.close()
         return uch_praktika, pr_praktika
 
     def extract_uk(self):
-        pattern1 = r'3\.2\.\s*Программа[\w\s]+универсальные компетенции:'
-        pattern2 = r'3\.3\.\s*Программа\s+\w+'
+        for table_info in self.all_tables:
+            table_data = table_info['data']
 
-        doc = fitz.open(self.pdf_path)
-        complete_table = []
-        capturing = False
+            table_text = ' '.join([' '.join(row) for row in table_data])
+            if 'УК-' in table_text:
+                return table_data
 
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            text = page.get_text()
-            text = text.replace("fgos.ru", "").replace(str(self.date), "") + "\n"
-
-            if re.search(pattern1, text):
-                capturing = True
-
-            if capturing:
-                tables = page.find_tables()
-                for table in tables:
-                    table_data = table.extract()
-                    if table_data:
-                        for row in table_data:
-                            if any(cell for cell in row):
-                                clean_row = []
-                                for cell in row:
-                                    if cell:
-                                        cell_clean = re.sub(r'\s+', ' ', str(cell)).strip()
-                                        cell_clean = cell_clean.replace("\n", " ").strip()
-                                        clean_row.append(cell_clean)
-                                    else:
-                                        clean_row.append('')
-                                complete_table.append(clean_row)
-
-            if re.search(pattern2, text):
-                break
-
-        doc.close()
-
-        for i in range(len(complete_table)):
-            if complete_table[i][0] == "" and i > 0:
-                complete_table[i][0] = complete_table[i - 1][0]
-
-        return complete_table
+        return []
 
 
     def extract_opk(self):
-        all_text = ""
-        doc = fitz.open(self.pdf_path)
-        for page in doc:
-            text = page.get_text()
-            if text:
-                all_text += text.replace("fgos.ru", "").replace(str(self.date), "") + "\n"
 
         pattern1 = r'3\.3\. Программа [\w\s]+:'
         pattern2 = r'3\.4\. Профессиональные компетенции'
 
-        match1 = re.search(pattern1, all_text)
-        match2 = re.search(pattern2, all_text)
+        match1 = re.search(pattern1, self.text)
+        match2 = re.search(pattern2, self.text)
 
         if match1 and match2:
             start_pos = match1.end()
             end_pos = match2.start()
-            opk_text = all_text[start_pos:end_pos].strip()
+            opk_text = self.text[start_pos:end_pos].strip()
 
             opk_items = []
             i = 0
@@ -387,54 +343,18 @@ class Parser:
                 return tuple(map(int, numbers))
 
             processed_opk.sort(key=opk_key)
-            doc.close()
             return processed_opk
 
     def extract_standard(self):
-        pattern1 = r'ПЕРЕЧЕНЬ\s+ПРОФЕССИОНАЛЬНЫХ\s+СТАНДАРТОВ'
+        for table_info in self.all_tables:
+            table_data = table_info['data']
 
-        doc = fitz.open(self.pdf_path)
-        complete_table = []
-        capturing = False
+            table_text = ' '.join([' '.join(row) for row in table_data]).lower()
+            has_standards = 'профессиональн' in table_text and 'стандарт' in table_text
+            has_code = 'код' in table_text
 
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            text = page.get_text()
-            text = text.replace("fgos.ru", "").replace(str(self.date), "") + "\n"
-
-            if re.search(pattern1, text):
-                capturing = True
-
-            if capturing:
-                tables = page.find_tables()
-                for table in tables:
-                    table_data = table.extract()
-                    if table_data:
-                        for row in table_data:
-                            if any(cell for cell in row):
-                                clean_row = []
-                                for cell in row:
-                                    if cell:
-                                        cell_clean = re.sub(r'\s+', ' ', str(cell)).strip()
-                                        cell_clean = cell_clean.replace("\n", " ").strip()
-                                        clean_row.append(cell_clean)
-                                    else:
-                                        clean_row.append('')
-                                complete_table.append(clean_row)
-
-            if page_num == len(doc) - 1:
-                break
-
-        doc.close()
-        s=[]
-        for i in range(len(complete_table)):
-            if complete_table[i][0] == "" and complete_table[i][1] == "":
-                complete_table[i-1][2] += complete_table[i][2]
-                s.append(i)
-
-        for i in s[::-1]:
-            complete_table.pop(i)
-        return complete_table
+            if has_standards and has_code:
+                return table_data
 
     def _auto_adjust_columns(self, worksheet):
         for column in worksheet.columns:
@@ -444,116 +364,90 @@ class Parser:
             for cell in column:
                 cell.alignment = Alignment(wrap_text=True, vertical='top')
 
-
                 if cell.value:
                     lines = str(cell.value).split('\n')
                     max_line_length = max(len(line) for line in lines) if lines else 0
                     max_length = max(max_length, max_line_length)
 
-
             adjusted_width = min(max_length + 2, 50)
             worksheet.column_dimensions[column_letter].width = adjusted_width
 
     def save_all_to_excel(self, filename=None):
-
         if filename is None:
             doc_name = self.extract_doc_name()
             filename = f"{doc_name}.xlsx"
         elif not filename.endswith('.xlsx'):
             filename += '.xlsx'
 
-        with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+        try:
+            with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+                # 1. Дисциплины специальности
+                discipliny = self.extract_discipliny_specialiteta()
+                if discipliny:
+                    pd.DataFrame(discipliny).to_excel(writer, sheet_name='Дисциплины', index=False, header=False)
 
-            # 1. Дисциплины специальности
-            discipliny = self.extract_discipliny_specialiteta()
-            if discipliny:
-                df_discipliny = pd.DataFrame(discipliny, columns=['Дисциплины'])
-                df_discipliny.to_excel(writer, sheet_name='Дисциплины', index=False)
+                # 2. Специализации
+                specializacii = self.extract_specializacii()
+                if specializacii and len(specializacii) == 2:
+                    numbers_s, names_s = specializacii
+                    data = list(zip(numbers_s, names_s))
+                    pd.DataFrame(data).to_excel(writer, sheet_name='Специализации', index=False, header=False)
 
-            # 2. Специализации
-            specializacii = self.extract_specializacii()
-            if specializacii and len(specializacii) == 2:
-                numbers_s, names_s = specializacii
-                df_specializacii = pd.DataFrame({
-                    'Номер специализации': numbers_s,
-                    'Название специализации': names_s
-                })
-                df_specializacii.to_excel(writer, sheet_name='Специализации', index=False)
+                # 3. Структура и объем
+                structure = self.extract_structure_and_volume()
+                if structure:
+                    pd.DataFrame(structure).to_excel(writer, sheet_name='Структура_и_объем', index=False, header=False)
 
-            # 3. Структура и объем
-            structure = self.extract_structure_and_volume()
-            if structure:
-                if len(structure) > 0:
-                    headers = structure[0]
-                    data = structure[1:]
-                    df_structure = pd.DataFrame(data, columns=headers)
-                else:
-                    max_cols = max(len(row) for row in structure) if structure else 0
-                    df_structure = pd.DataFrame(structure, columns=[f'Колонка_{i + 1}' for i in range(max_cols)])
-                df_structure.to_excel(writer, sheet_name='Структура_и_объем', index=False)
+                # 4. Практика - сохраняем в один лист с двумя колонками
+                praktika = self.extract_praktika()
+                if praktika and len(praktika) == 2:
+                    uch_praktika, pr_praktika = praktika
 
-            # 4. Практика - объединенная таблица
-            praktika = self.extract_praktika()
-            if praktika and len(praktika) == 2:
-                uch_praktika, pr_praktika = praktika
+                    max_len = max(len(uch_praktika), len(pr_praktika))
+                    data = []
+                    for i in range(max_len):
+                        uch = uch_praktika[i] if i < len(uch_praktika) else ''
+                        pr = pr_praktika[i] if i < len(pr_praktika) else ''
+                        data.append([uch, pr])
 
-                max_len = max(len(uch_praktika), len(pr_praktika))
+                    pd.DataFrame(data).to_excel(writer, sheet_name='Практика', index=False, header=False)
 
-                uch_praktika_extended = uch_praktika + [''] * (max_len - len(uch_praktika))
-                pr_praktika_extended = pr_praktika + [''] * (max_len - len(pr_praktika))
+                # 5. Универсальные компетенции
+                uk = self.extract_uk()
+                if uk:
+                    pd.DataFrame(uk).to_excel(writer, sheet_name='Универсальные_компетенции', index=False, header=False)
 
-                df_praktika = pd.DataFrame({
-                    'Учебная практика': uch_praktika_extended,
-                    'Производственная практика': pr_praktika_extended
-                })
-                df_praktika.to_excel(writer, sheet_name='Практика', index=False)
+                # 6. ОПК
+                opk = self.extract_opk()
+                if opk:
+                    pd.DataFrame(opk).to_excel(writer, sheet_name='ОПК', index=False, header=False)
 
-            # 5. Универсальные компетенции
-            uk = self.extract_uk()
-            if uk:
-                if len(uk) > 0:
-                    headers = uk[0]
-                    data = uk[1:]
-                    df_uk = pd.DataFrame(data, columns=headers)
-                else:
-                    max_cols_uk = max(len(row) for row in uk) if uk else 0
-                    df_uk = pd.DataFrame(uk, columns=[f'Колонка_{i + 1}' for i in range(max_cols_uk)])
-                df_uk.to_excel(writer, sheet_name='Универсальные_компетенции', index=False)
-
-            # 6. ОПК
-            opk = self.extract_opk()
-            if opk:
-                df_opk = pd.DataFrame(opk, columns=['Код', 'Описание'])
-                df_opk.to_excel(writer, sheet_name='ОПК', index=False)
-
-            # 7. Профессиональные стандарты
-            standards = self.extract_standard()
-            if standards:
-                if len(standards) > 0:
-                    headers = standards[0]
-                    data = standards[1:]
-                    df_standards = pd.DataFrame(data, columns=headers)
-                else:
-                    max_cols_std = max(len(row) for row in standards) if standards else 0
-                    df_standards = pd.DataFrame(standards, columns=[f'Колонка_{i + 1}' for i in range(max_cols_std)])
-                df_standards.to_excel(writer, sheet_name='Проф_стандарты', index=False)
+                # 7. Профессиональные стандарты
+                standards = self.extract_standard()
+                if standards:
+                    pd.DataFrame(standards).to_excel(writer, sheet_name='Проф_стандарты', index=False, header=False)
 
 
-        workbook = load_workbook(filename)
+            workbook = load_workbook(filename)
+            for sheet_name in workbook.sheetnames:
+                worksheet = workbook[sheet_name]
+                self._auto_adjust_columns(worksheet)
 
-        for sheet_name in workbook.sheetnames:
-            worksheet = workbook[sheet_name]
-            self._auto_adjust_columns(worksheet)
+            workbook.save(filename)
+            print(f"Файл успешно сохранен: {filename}")
+            return filename
 
-        workbook.save(filename)
-
-        print(f"Все данные сохранены в файл: {filename}")
-        return filename
-
+        except Exception as e:
+            print(f"Ошибка при сохранении файла: {e}")
+            return None
 
 if __name__ == "__main__":
-    parser = Parser("112.pdf")
+    url = "https://fgos.ru/fgos/fgos-02-04-01-matematika-i-kompyuternye-nauki-810/"
 
-    filename = parser.save_all_to_excel()
+    parser = Parser(url)
 
-    print(f"Файл создан: {filename}")
+    if parser.soup:
+
+        excel_file = parser.save_all_to_excel()
+
+        print(f"\nФайл сохранен: {excel_file}")
