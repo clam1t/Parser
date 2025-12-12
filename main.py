@@ -442,7 +442,7 @@ class Parser:
             return None
 
 if __name__ == "__main__":
-    url = "https://fgos.ru/fgos/fgos-02-04-01-matematika-i-kompyuternye-nauki-810/"
+    url = "https://fgos.ru/fgos/fgos-01-05-01-fundamentalnye-matematika-i-mehanika-16/"
 
     parser = Parser(url)
 
